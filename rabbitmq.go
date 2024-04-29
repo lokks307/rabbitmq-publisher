@@ -35,7 +35,8 @@ type RabbitmqSetting struct {
 
 var RabbitmqConfig *RabbitmqSetting
 
-func Init() error {
+func Init(config *RabbitmqSetting) error {
+	RabbitmqConfig = config
 	var err error
 	rabbitmqAddr := fmt.Sprintf("amqp://%s:%s@%s:%s", RabbitmqConfig.User, RabbitmqConfig.UserPw, RabbitmqConfig.Addr, RabbitmqConfig.AmqpPort)
 	logrus.Trace("rabbitmq: " + rabbitmqAddr)
