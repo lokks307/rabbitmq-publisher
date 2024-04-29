@@ -1,4 +1,4 @@
-module github.com/lokks307/RabbitMQ-Receiver/rbmqpublisher
+module github.com/lokks307/rabbitmq-publisher
 
 go 1.21.8
 
