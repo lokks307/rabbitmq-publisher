@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/labstack/echo"
+	"github.com/labstack/echo/v4"
 	"github.com/lokks307/djson/v2"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/sirupsen/logrus"
@@ -32,6 +32,8 @@ type RabbitmqSetting struct {
 	RoutingKey         string
 	LogMode            string
 }
+
+var rabbitmqConfig *RabbitmqSetting
 
 func Init(rabbitSetting *RabbitmqSetting) error {
 	var err error
