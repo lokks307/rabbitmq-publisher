@@ -33,11 +33,11 @@ type RabbitmqSetting struct {
 	LogMode            string
 }
 
-var rabbitmqConfig *RabbitmqSetting
+var RabbitmqConfig *RabbitmqSetting
 
-func Init(rabbitSetting *RabbitmqSetting) error {
+func Init() error {
 	var err error
-	rabbitmqAddr := fmt.Sprintf("amqp://%s:%s@%s:%s", rabbitSetting.User, rabbitSetting.UserPw, rabbitSetting.Addr, rabbitSetting.AmqpPort)
+	rabbitmqAddr := fmt.Sprintf("amqp://%s:%s@%s:%s", RabbitmqConfig.User, RabbitmqConfig.UserPw, RabbitmqConfig.Addr, RabbitmqConfig.AmqpPort)
 	logrus.Trace("rabbitmq: " + rabbitmqAddr)
 	RabbitmqConn, err = amqp.Dial(rabbitmqAddr)
 	if err != nil {
@@ -51,13 +51,13 @@ func Init(rabbitSetting *RabbitmqSetting) error {
 		return err
 	}
 	err = RabbitmqCh.ExchangeDeclare(
-		rabbitSetting.Exchange, //exchange name
-		"direct",               // exchange type
-		true,                   // durable
-		false,                  //auto-deleted
-		false,                  // internal
-		false,                  // no-wait
-		nil,                    //arguments
+		RabbitmqConfig.Exchange, //exchange name
+		"direct",                // exchange type
+		true,                    // durable
+		false,                   //auto-deleted
+		false,                   // internal
+		false,                   // no-wait
+		nil,                     //arguments
 	)
 	if err != nil {
 		failOnError(err, "Failed to declare an exchange")
@@ -67,7 +67,7 @@ func Init(rabbitSetting *RabbitmqSetting) error {
 	return nil
 }
 
-func RabbitmqOperationLogger(rabbitSetting *RabbitmqSetting) echo.MiddlewareFunc {
+func RabbitmqOperationLogger() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) (err error) {
 			req := c.Request()
@@ -79,7 +79,7 @@ func RabbitmqOperationLogger(rabbitSetting *RabbitmqSetting) echo.MiddlewareFunc
 				return
 			}
 
-			if rabbitSetting.LogMode == "onlyError" {
+			if RabbitmqConfig.LogMode == "onlyError" {
 				if res.Status < 400 {
 					return
 				}
@@ -118,10 +118,10 @@ func RabbitmqOperationLogger(rabbitSetting *RabbitmqSetting) echo.MiddlewareFunc
 					defer cancel()
 
 					err = RabbitmqCh.PublishWithContext(ctx,
-						rabbitSetting.Exchange,   // exchange
-						rabbitSetting.RoutingKey, // routing key
-						false,                    // mandatory
-						false,                    // immediate
+						RabbitmqConfig.Exchange,   // exchange
+						RabbitmqConfig.RoutingKey, // routing key
+						false,                     // mandatory
+						false,                     // immediate
 						amqp.Publishing{
 							DeliveryMode: amqp.Persistent,
 							ContentType:  "text/plain",
