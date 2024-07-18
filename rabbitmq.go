@@ -1,27 +1,25 @@
 package rbmqpublisher
 
 import (
-	"bytes"
 	"context"
+	"errors"
 	"fmt"
-	"io"
-	"log"
-	"net/http"
 	"time"
 
-	"github.com/labstack/echo/v4"
-	"github.com/lokks307/djson/v2"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/sirupsen/logrus"
 )
 
-func failOnError(err error, msg string) {
-	log.Printf("%s: %s", msg, err)
+func failOnError(err error, msg string) error {
+	logrus.Error(err, msg)
+	return err
 }
 
-var RabbitmqCh *amqp.Channel
-var RabbitmqConn *amqp.Connection
-
+type RabbitMQ struct {
+	RabbitmqCh   *amqp.Channel
+	RabbitmqConn *amqp.Connection
+	Config       *RabbitmqSetting
+}
 type RabbitmqSetting struct {
 	Addr               string
 	User               string
@@ -33,109 +31,69 @@ type RabbitmqSetting struct {
 	LogMode            string
 }
 
-var RabbitmqConfig *RabbitmqSetting
-
-func Init(config *RabbitmqSetting) error {
-	RabbitmqConfig = config
+func (m *RabbitMQ) Init() error {
 	var err error
-	rabbitmqAddr := fmt.Sprintf("amqp://%s:%s@%s:%s", RabbitmqConfig.User, RabbitmqConfig.UserPw, RabbitmqConfig.Addr, RabbitmqConfig.AmqpPort)
-	logrus.Trace("rabbitmq: " + rabbitmqAddr)
-	RabbitmqConn, err = amqp.Dial(rabbitmqAddr)
-	if err != nil {
-		failOnError(err, "failed to Connect to RabbitMQ")
-		return err
+
+	// check config
+	if m.Config == nil {
+		return errors.New("configuration is nil")
 	}
 
-	RabbitmqCh, err = RabbitmqConn.Channel()
-	if err != nil {
-		failOnError(err, "Failed to Open channel")
-		return err
+	if m.Config.Addr == "" ||
+		m.Config.User == "" ||
+		m.Config.UserPw == "" ||
+		m.Config.AmqpPort == "" ||
+		m.Config.RabbitmqManagePort == "" ||
+		m.Config.Exchange == "" ||
+		m.Config.RoutingKey == "" ||
+		m.Config.LogMode == "" {
+		return errors.New("configuration fields cannot be empty")
 	}
-	err = RabbitmqCh.ExchangeDeclare(
-		RabbitmqConfig.Exchange, //exchange name
-		"direct",                // exchange type
-		true,                    // durable
-		false,                   //auto-deleted
-		false,                   // internal
-		false,                   // no-wait
-		nil,                     //arguments
+
+	rabbitmqAddr := fmt.Sprintf("amqp://%s:%s@%s:%s", m.Config.User, m.Config.UserPw, m.Config.Addr, m.Config.AmqpPort)
+	m.RabbitmqConn, err = amqp.Dial(rabbitmqAddr)
+	if err != nil {
+		return failOnError(err, "failed to Connect to RabbitMQ")
+	}
+
+	m.RabbitmqCh, err = m.RabbitmqConn.Channel()
+	if err != nil {
+		return failOnError(err, "Failed to Open channel")
+	}
+	err = m.RabbitmqCh.ExchangeDeclare(
+		m.Config.Exchange, //exchange name
+		"direct",          // exchange type
+		true,              // durable
+		false,             //auto-deleted
+		false,             // internal
+		false,             // no-wait
+		nil,               //arguments
 	)
 	if err != nil {
-		failOnError(err, "Failed to declare an exchange")
-		return err
+		return failOnError(err, "Failed to declare an exchange")
 	}
 	logrus.Trace("Rabbitmq ready")
 	return nil
 }
 
-func RabbitmqOperationLogger() echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) (err error) {
-			req := c.Request()
-			res := c.Response()
-			start := time.Now()
+func (m *RabbitMQ) Publish(body []byte) error {
 
-			err = next(c)
-			if req.RequestURI == "/heartbeat" || req.RequestURI == "/live" || req.RequestURI == "/ready" {
-				return
-			}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
 
-			if RabbitmqConfig.LogMode == "onlyError" {
-				if res.Status < 400 {
-					return
-				}
-			}
-			if req.Method == http.MethodGet || req.Method == http.MethodPost || req.Method == http.MethodPut || req.Method == http.MethodDelete {
-				stop := time.Now()
-				logrus.Trace("api called and will publish message: " + req.RequestURI)
-				reqId := c.Get("request_id")
-				reqBodyBytes, err := io.ReadAll(c.Request().Body)
-
-				c.Request().Body = io.NopCloser(bytes.NewBuffer(reqBodyBytes))
-
-				val := djson.New().Put(djson.Object{
-					"request_id":   reqId,
-					"client_ip":    req.RemoteAddr,
-					"latency":      stop.Sub(start).Milliseconds(),
-					"method":       req.Method,
-					"uri":          req.RequestURI,
-					"status":       res.Status,
-					"referrer":     req.Host,
-					"user_agent":   req.UserAgent(),
-					"request_body": string(reqBodyBytes),
-				})
-
-				if err != nil {
-					val.Put("err_log", err.Error())
-				}
-
-				userUID := c.Param("user_uid")
-				if userUID == "" {
-					userUID = "default"
-				}
-
-				go func(userUID string, val *djson.JSON) {
-					ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-					defer cancel()
-
-					err = RabbitmqCh.PublishWithContext(ctx,
-						RabbitmqConfig.Exchange,   // exchange
-						RabbitmqConfig.RoutingKey, // routing key
-						false,                     // mandatory
-						false,                     // immediate
-						amqp.Publishing{
-							DeliveryMode: amqp.Persistent,
-							ContentType:  "text/plain",
-							Timestamp:    time.Now(),
-							Body:         []byte(val.ToString()),
-						})
-					if err != nil {
-						failOnError(err, "Failed to publish a message")
-					}
-				}(userUID, val)
-			}
-
-			return
-		}
+	err := m.RabbitmqCh.PublishWithContext(ctx,
+		m.Config.Exchange,   // exchange
+		m.Config.RoutingKey, // routing key
+		false,               // mandatory
+		false,               // immediate
+		amqp.Publishing{
+			DeliveryMode: amqp.Persistent,
+			ContentType:  "text/plain",
+			Timestamp:    time.Now(),
+			Body:         body,
+		})
+	if err != nil {
+		return failOnError(err, "Failed to publish a message")
 	}
+	return nil
 }
