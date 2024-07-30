@@ -81,6 +81,9 @@ func (m *RabbitMQ) Publish(body []byte) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
+	if m.RabbitmqCh == nil {
+		return errors.New("empty channel")
+	}
 	err := m.RabbitmqCh.PublishWithContext(ctx,
 		m.Config.Exchange,   // exchange
 		m.Config.RoutingKey, // routing key
