@@ -31,23 +31,28 @@ type RabbitmqSetting struct {
 	LogMode            string
 }
 
-func (m *RabbitMQ) Init() error {
+func (m *RabbitMQ) Init(config RabbitmqSetting) error {
 	var err error
-
-	// check config
-	if m.Config == nil {
-		return errors.New("configuration is nil")
+	if config.Addr == "" ||
+		config.User == "" ||
+		config.UserPw == "" ||
+		config.AmqpPort == "" ||
+		config.RabbitmqManagePort == "" ||
+		config.Exchange == "" ||
+		config.RoutingKey == "" ||
+		config.LogMode == "" {
+		return errors.New("configuration fields cannot be empty")
 	}
 
-	if m.Config.Addr == "" ||
-		m.Config.User == "" ||
-		m.Config.UserPw == "" ||
-		m.Config.AmqpPort == "" ||
-		m.Config.RabbitmqManagePort == "" ||
-		m.Config.Exchange == "" ||
-		m.Config.RoutingKey == "" ||
-		m.Config.LogMode == "" {
-		return errors.New("configuration fields cannot be empty")
+	m.Config = &RabbitmqSetting{
+		Addr:               config.Addr,
+		User:               config.User,
+		UserPw:             config.UserPw,
+		AmqpPort:           config.AmqpPort,
+		RabbitmqManagePort: config.RabbitmqManagePort,
+		Exchange:           config.Exchange,
+		RoutingKey:         config.RoutingKey,
+		LogMode:            config.LogMode,
 	}
 
 	rabbitmqAddr := fmt.Sprintf("amqp://%s:%s@%s:%s", m.Config.User, m.Config.UserPw, m.Config.Addr, m.Config.AmqpPort)
